@@ -18,7 +18,7 @@ import yaml
 
 from .guardrails import ALLOWED_TABLES, UnsafeSQL, validate_sql
 
-MODEL = os.environ.get("SP_GEMINI_MODEL", "gemini-2.5-flash")
+MODEL = os.environ.get("SP_GEMINI_MODEL", "gemini-3.8-flash")
 ROOT = Path(__file__).resolve().parents[3]
 
 

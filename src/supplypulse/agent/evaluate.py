@@ -7,13 +7,15 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import time
 from pathlib import Path
 
 import duckdb
 
 from .eval_set import CASES
 from .guardrails import validate_sql
-from .text_to_sql import ROOT, ask, schema_context
+from .text_to_sql import MODEL, ROOT, ask, schema_context
 
 
 def _norm(rows):
@@ -41,12 +43,17 @@ def dry(db: str) -> int:
     return bad
 
 
-def score(db: str, llm, out: str | None = None) -> dict:
+def score(db: str, llm, out: str | None = None, pause: float = 4.0) -> dict:
     ctx = schema_context()
     con = duckdb.connect(db, read_only=True)
     results = []
     for q, gold in CASES:
-        a = ask(q, db, llm, ctx)
+        try:
+            a = ask(q, db, llm, ctx)
+        except Exception as e:  # noqa: BLE001  API errors count as a miss, not a crash
+            results.append({"question": q, "pass": False, "answerable": gold is not None, "sql": "", "error": f"api: {e}"[:300], "attempts": 0})
+            continue
+        time.sleep(pause)
         if gold is None:
             ok = (not a.error) and a.rows[:1] == [("UNANSWERABLE",)]
         else:
@@ -55,6 +62,7 @@ def score(db: str, llm, out: str | None = None) -> dict:
     ans = [r for r in results if r["answerable"]]
     rep = {"cases": len(results), "execution_accuracy": sum(r["pass"] for r in ans) / len(ans),
            "refusal_accuracy": sum(r["pass"] for r in results if not r["answerable"]) / max(1, len(results) - len(ans)), "results": results}
+    rep["model"] = os.environ.get("SP_GEMINI_MODEL", MODEL)
     if out:
         Path(out).write_text(json.dumps(rep, indent=2))
     return rep
