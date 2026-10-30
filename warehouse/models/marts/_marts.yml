@@ -1,0 +1,84 @@
+version: 2
+
+models:
+  - name: dim_date
+    description: Calendar dimension covering the first order date through the last ship date.
+    columns:
+      - name: date_key
+        tests: [not_null, unique]
+  - name: dim_product
+    description: One row per product with latest category and department.
+    columns:
+      - name: product_id
+        tests: [not_null, unique]
+  - name: dim_customer
+    description: One row per customer (segment and location only; no direct identifiers).
+    columns:
+      - name: customer_id
+        tests: [not_null, unique]
+      - name: customer_segment
+        tests:
+          - accepted_values:
+              values: ['Consumer', 'Corporate', 'Home Office']
+  - name: dim_geography
+    description: Order destination hierarchy.
+    columns:
+      - name: geography_key
+        tests: [not_null, unique]
+      - name: market
+        tests:
+          - accepted_values:
+              values: ['Africa', 'Europe', 'LATAM', 'Pacific Asia', 'USCA']
+  - name: dim_shipping_mode
+    columns:
+      - name: shipping_mode
+        tests: [not_null, unique]
+  - name: fct_order_items
+    description: Order-item grain fact table with 0/1 KPI flags.
+    columns:
+      - name: order_item_id
+        tests: [not_null, unique]
+      - name: order_date
+        tests:
+          - not_null
+          - relationships: {to: ref('dim_date'), field: date_key}
+      - name: customer_id
+        tests:
+          - not_null
+          - relationships: {to: ref('dim_customer'), field: customer_id}
+      - name: product_id
+        tests:
+          - not_null
+          - relationships: {to: ref('dim_product'), field: product_id}
+      - name: geography_key
+        tests:
+          - not_null
+          - relationships: {to: ref('dim_geography'), field: geography_key}
+      - name: shipping_mode
+        tests:
+          - relationships: {to: ref('dim_shipping_mode'), field: shipping_mode}
+      - name: delivery_status
+        tests:
+          - accepted_values:
+              values: ['Advance shipping', 'Late delivery', 'Shipping canceled', 'Shipping on time']
+      - name: is_on_time
+        tests:
+          - accepted_values: {values: [0, 1], quote: false}
+      - name: is_late
+        tests:
+          - accepted_values: {values: [0, 1], quote: false}
+  - name: kpi_daily
+    columns:
+      - name: order_date
+        tests: [not_null]
+      - name: market
+        tests: [not_null]
+  - name: kpi_monthly
+    columns:
+      - name: year_month
+        tests: [not_null]
+  - name: demand_weekly
+    description: Zero-filled weekly demand per market x department (forecasting input).
+    columns:
+      - name: units
+        tests: [not_null]

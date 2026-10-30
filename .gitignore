@@ -1,0 +1,15 @@
+data/raw/
+data/curated/
+data/quarantine/
+data/*.duckdb
+data/*.duckdb.wal
+data/exports/
+warehouse/target/
+warehouse/logs/
+warehouse/dbt_packages/
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+warehouse/.user.yml
+site/vendor/

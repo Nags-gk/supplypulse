@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SupplyPulse supply chain analytics</title>
+<meta name="description" content="Supply chain analytics on 180,519 order lines: PySpark and dbt pipeline, governed metrics, forecasts with a structural break, and KPI anomaly detection.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700&family=Newsreader:opsz,wght@6..72,500;6..72,600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top">
+  <div class="wrap top-inner">
+    <a class="brand" href="#top">SupplyPulse</a>
+    <nav aria-label="Sections">
+      <a href="#volume">Volume</a>
+      <a href="#delivery">Delivery</a>
+      <a href="#forecast">Forecast</a>
+      <a href="#anomalies">Anomalies</a>
+      <a href="#metrics">Metrics</a>
+      <a href="#method">Method</a>
+    </nav>
+    <button id="theme" class="theme" type="button" aria-label="Toggle dark mode">Theme</button>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+  <section id="top" class="intro">
+    <h1>What 180,519 supply chain order lines say, and what they can't</h1>
+    <p class="lede" id="lede">Loading the warehouse extract.</p>
+  </section>
+
+  <section id="volume" class="block">
+    <div class="finding">
+      <h2 id="volume-title">Order volume</h2>
+      <div id="volume-text" class="vtext"></div>
+      <dl class="facts" id="volume-facts"></dl>
+    </div>
+    <figure class="hero">
+      <div class="chart" id="chart-volume" role="img" aria-label="Weekly order lines, with a drop in October 2017"></div>
+      <figcaption>Order lines per week (complete weeks only). Hover or focus the chart for exact values.</figcaption>
+      <details class="tableview"><summary>Table view</summary><div id="table-volume"></div></details>
+    </figure>
+  </section>
+
+  <section id="delivery" class="block">
+    <div class="finding">
+      <h2 id="delivery-title">Delivery</h2>
+      <p id="delivery-text"></p>
+      <p class="caveat" id="delivery-caveat"></p>
+    </div>
+    <figure>
+      <div class="chart" id="chart-delivery" role="img" aria-label="Late delivery rate by shipping mode"></div>
+      <figcaption>Late share of deliverable order lines, by shipping mode.</figcaption>
+      <div id="table-delivery" class="tablewrap"></div>
+    </figure>
+  </section>
+
+  <section id="forecast" class="block">
+    <div class="finding">
+      <h2 id="forecast-title">Forecast</h2>
+      <p id="forecast-text"></p>
+      <dl class="facts" id="forecast-facts"></dl>
+    </div>
+    <figure>
+      <div class="chart" id="chart-forecast" role="img" aria-label="Weekly order lines with an eight week forecast"></div>
+      <figcaption id="forecast-cap"></figcaption>
+      <div id="leaderboards" class="boards"></div>
+    </figure>
+  </section>
+
+  <section id="anomalies" class="block">
+    <div class="finding">
+      <h2 id="anomaly-title">Anomaly watch</h2>
+      <p id="anomaly-text"></p>
+      <p class="caveat" id="anomaly-caveat"></p>
+    </div>
+    <figure>
+      <div class="chart" id="chart-anomaly" role="img" aria-label="Weeks flagged by the anomaly detector, by KPI"></div>
+      <figcaption>Each mark is a week where a KPI sat at least 3.5 robust standard deviations from its trailing median.</figcaption>
+      <div id="table-anomaly" class="tablewrap"></div>
+      <div id="table-validation" class="tablewrap"></div>
+    </figure>
+  </section>
+
+  <section id="metrics" class="block">
+    <div class="finding">
+      <h2>Metrics have one definition</h2>
+      <p id="metrics-text"></p>
+      <ul class="plain" id="source-limits"></ul>
+    </div>
+    <figure>
+      <div id="table-metrics" class="tablewrap"></div>
+      <div id="table-catalog" class="tablewrap"></div>
+    </figure>
+  </section>
+
+  <section id="method" class="block single">
+    <div class="finding wide">
+      <h2>How it is built</h2>
+      <ol class="steps" id="method-steps"></ol>
+      <p class="caveat" id="attribution"></p>
+    </div>
+  </section>
+</main>
+
+<footer class="wrap foot">
+  <p id="foot"></p>
+</footer>
+<div id="tip" class="tip" role="status" hidden></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js" crossorigin="anonymous"></script>
+<script src="app.js"></script>
+</body>
+</html>

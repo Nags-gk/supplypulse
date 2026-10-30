@@ -1,0 +1,80 @@
+# Governed metric definitions. Every metric is executable SQL over the star schema and is checked by
+# `python -m supplypulse.catalog.metrics_check` (runs each metric, verifies it against the KPI marts).
+version: 1
+owner: supplypulse
+grain_table: fct_order_items
+dimensions:
+  market: {table: dim_geography, column: market, join: geography_key}
+  order_region: {table: dim_geography, column: order_region, join: geography_key}
+  department_name: {table: dim_product, column: department_name, join: product_id}
+  category_name: {table: dim_product, column: category_name, join: product_id}
+  shipping_mode: {table: fct_order_items, column: shipping_mode}
+  customer_segment: {table: dim_customer, column: customer_segment, join: customer_id}
+  year_month: {table: dim_date, column: year_month, join: order_date}
+metrics:
+  - name: order_lines
+    label: Order lines
+    description: Count of order items.
+    expr: count(*)
+    unit: count
+    good_direction: up
+  - name: orders
+    label: Orders
+    description: Distinct orders.
+    expr: count(distinct order_id)
+    unit: count
+    good_direction: up
+  - name: units_sold
+    label: Units sold
+    description: Sum of item quantity.
+    expr: sum(units)
+    unit: units
+    good_direction: up
+  - name: net_sales
+    label: Net sales
+    description: Gross sales minus item discount.
+    expr: sum(net_sales)
+    unit: usd
+    good_direction: up
+  - name: profit
+    label: Profit
+    description: Sum of order profit per item.
+    expr: sum(profit)
+    unit: usd
+    good_direction: up
+  - name: profit_margin
+    label: Profit margin
+    description: Profit divided by net sales.
+    expr: sum(profit) / nullif(sum(net_sales), 0)
+    unit: ratio
+    good_direction: up
+  - name: on_time_delivery_rate
+    label: On-time delivery rate
+    description: Lines delivered on time or early divided by lines not shipping-cancelled. This is OTD, not OTIF, because the data has no shipped-quantity field.
+    expr: sum(is_on_time) * 1.0 / nullif(sum(1 - is_shipping_canceled), 0)
+    unit: ratio
+    good_direction: up
+  - name: late_delivery_rate
+    label: Late delivery rate
+    description: Late lines divided by lines not shipping-cancelled.
+    expr: sum(is_late) * 1.0 / nullif(sum(1 - is_shipping_canceled), 0)
+    unit: ratio
+    good_direction: down
+  - name: avg_delay_days
+    label: Average delay (days)
+    description: Mean of actual minus scheduled shipping days over lines not shipping-cancelled. Negative means early.
+    expr: sum(delay_days) filter (where is_shipping_canceled = 0) * 1.0 / nullif(sum(1 - is_shipping_canceled), 0)
+    unit: days
+    good_direction: down
+  - name: cancellation_rate
+    label: Order cancellation rate
+    description: Lines with order status CANCELED divided by all lines.
+    expr: sum(is_order_canceled) * 1.0 / count(*)
+    unit: ratio
+    good_direction: down
+  - name: suspected_fraud_rate
+    label: Suspected fraud rate
+    description: Lines with order status SUSPECTED_FRAUD divided by all lines.
+    expr: sum(is_suspected_fraud) * 1.0 / count(*)
+    unit: ratio
+    good_direction: down

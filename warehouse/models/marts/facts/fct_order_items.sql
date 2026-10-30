@@ -1,0 +1,28 @@
+-- Grain: one row per order item. Flags are 0/1 integers so KPIs are plain sums and averages.
+select
+    s.order_item_id,
+    s.order_id,
+    s.order_date,
+    s.ship_date,
+    s.customer_id,
+    s.product_id,
+    md5(concat_ws('|', s.market, s.order_region, s.order_country, s.order_state, s.order_city)) as geography_key,
+    s.shipping_mode,
+    s.payment_type,
+    s.delivery_status,
+    s.order_status,
+    s.item_quantity                                         as units,
+    s.sales                                                 as gross_sales,
+    s.item_discount                                         as discount_amount,
+    s.item_discount_rate                                    as discount_rate,
+    s.item_total                                            as net_sales,
+    s.order_profit                                          as profit,
+    s.days_shipping_real                                    as shipping_days_actual,
+    s.days_shipping_scheduled                               as shipping_days_scheduled,
+    s.days_shipping_real - s.days_shipping_scheduled        as delay_days,
+    cast(s.delivery_status in ('Advance shipping', 'Shipping on time') as integer) as is_on_time,
+    cast(s.delivery_status = 'Late delivery' as integer)    as is_late,
+    cast(s.delivery_status = 'Shipping canceled' as integer) as is_shipping_canceled,
+    cast(s.order_status = 'CANCELED' as integer)            as is_order_canceled,
+    cast(s.order_status = 'SUSPECTED_FRAUD' as integer)     as is_suspected_fraud
+from {{ ref('stg_order_items') }} as s

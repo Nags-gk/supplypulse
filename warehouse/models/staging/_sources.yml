@@ -1,0 +1,17 @@
+version: 2
+
+sources:
+  - name: curated
+    description: >
+      Output of the PySpark ETL (src/supplypulse/etl/spark_etl.py): DataCo order lines after PII removal,
+      type casting and the data-quality gate. Partitioned Parquet (order_year/order_month).
+    meta:
+      external_location: "read_parquet('{{ env_var('SP_CURATED_GLOB', '../data/curated/orders/*/*/*.parquet') }}', hive_partitioning = true)"
+    tables:
+      - name: orders
+        description: One row per order item (order line).
+        columns:
+          - name: order_item_id
+            tests: [not_null, unique]
+          - name: order_id
+            tests: [not_null]

@@ -1,0 +1,14 @@
+pyspark==3.5.9
+duckdb==2.0.0
+dbt-core==1.12.6
+dbt-duckdb==1.11.1
+pandas==2.3.3
+numpy==2.5.3
+pyarrow==26.0.0
+statsforecast==2.1.1
+lightgbm==4.7.0
+scikit-learn==1.9.1
+PyYAML==6.0.3
+sqlglot==30.26.0
+google-genai==2.34.0
+pytest==9.1.1

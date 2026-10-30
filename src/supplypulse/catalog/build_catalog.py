@@ -1,0 +1,130 @@
+"""Build the data catalog: source inventory, tables and columns, lineage, tests, metrics and dashboards."""
+from __future__ import annotations
+
+import argparse
+import json
+from pathlib import Path
+
+import duckdb
+import yaml
+
+SOURCE_INFO = {
+    "name": "DataCo Smart Supply Chain",
+    "provider": "Constante, Silva & Pereira (2019), Mendeley Data",
+    "license": "CC BY 4.0",
+    "format": "CSV, ISO-8859-1, one row per order item",
+    "grain": "order item",
+    "coverage": "2015-01-01 to 2018-01-31 order dates",
+    "caveats": [
+        "No inventory levels, supplier ids or shipped-vs-ordered quantities: OTIF and inventory turns cannot be computed.",
+        "Product Status is constant, so a stock-availability KPI was dropped.",
+        "Shipping outcomes are almost deterministic by shipping mode (for example First Class is late on every line).",
+        "Weekly order volume is nearly constant until Oct 2017, then drops about 60% with a narrower product range.",
+    ],
+}
+
+
+def load_manifest(target: str) -> tuple[dict, dict]:
+    t = Path(target)
+    manifest = json.loads((t / "manifest.json").read_text())
+    results = json.loads((t / "run_results.json").read_text()) if (t / "run_results.json").exists() else {"results": []}
+    return manifest, results
+
+
+def build(db: str, target: str, metrics_path: str, dashboards_path: str, etl_report: str, metrics_values: str) -> dict:
+    manifest, run_results = load_manifest(target)
+    con = duckdb.connect(db, read_only=True)
+    try:
+        tables = con.execute("select table_name, table_type from information_schema.tables where table_schema = 'main' order by 1").fetchall()
+        cols = con.execute("select table_name, column_name, data_type from information_schema.columns where table_schema = 'main' order by table_name, ordinal_position").fetchall()
+        # views read Parquet through a dbt-relative path, so only materialised tables are counted
+        counts = {t: (con.execute(f'select count(*) from "{t}"').fetchone()[0] if tt != "VIEW" else None) for t, tt in tables}
+    finally:
+        con.close()
+
+    nodes = manifest["nodes"]
+    desc, lineage = {}, {}
+    for n in nodes.values():
+        if n["resource_type"] == "model":
+            desc[n["name"]] = n.get("description", "")
+            deps = [nodes[d]["name"] if d in nodes else d.split(".")[-1] for d in n["depends_on"].get("nodes", [])]
+            lineage[n["name"]] = sorted(deps)
+    col_desc = {(n["name"], c): v.get("description", "") for n in nodes.values() if n["resource_type"] == "model" for c, v in n["columns"].items()}
+
+    test_status: dict[str, int] = {}
+    for r in run_results.get("results", []):
+        uid = r["unique_id"]
+        if uid.startswith("test."):
+            test_status[r["status"]] = test_status.get(r["status"], 0) + 1
+
+    by_table: dict[str, list] = {}
+    for t, c, dt in cols:
+        by_table.setdefault(t, []).append({"name": c, "type": dt, "description": col_desc.get((t, c), "")})
+    kind = {t: ("view" if tt == "VIEW" else "table") for t, tt in tables}
+    layer = lambda t: "staging" if t.startswith("stg_") else "dimension" if t.startswith("dim_") else "fact" if t.startswith("fct_") else "mart"
+
+    etl = json.loads(Path(etl_report).read_text()) if Path(etl_report).exists() else {}
+    mvals = json.loads(Path(metrics_values).read_text()) if Path(metrics_values).exists() else {"metrics": []}
+    spec = yaml.safe_load(Path(metrics_path).read_text())
+    dash = yaml.safe_load(Path(dashboards_path).read_text())["dashboards"]
+    metric_names = {m["name"] for m in spec["metrics"]}
+    table_names = {t for t, _ in tables}
+    problems = [f"dashboard {d['id']}: unknown metric {m}" for d in dash for m in d["metrics"] if m not in metric_names]
+    problems += [f"dashboard {d['id']}: unknown table {t}" for d in dash for t in d["tables"] if t not in table_names]
+
+    return {
+        "sources": [{**SOURCE_INFO, "raw_columns": 53, "kept_columns": etl.get("kept_columns"),
+                     "dropped_pii_columns": etl.get("dropped_pii_columns", []), "raw_rows": etl.get("raw_rows"),
+                     "curated_rows": etl.get("curated_rows"), "quarantined_rows": etl.get("quarantined_rows")}],
+        "tables": [{"name": t, "kind": kind[t], "layer": layer(t), "rows": counts[t], "description": desc.get(t, ""),
+                    "upstream": lineage.get(t, []), "columns": by_table.get(t, [])} for t, _ in tables],
+        "tests": {"dbt_test_results": test_status},
+        "metrics": [{k: m[k] for k in ("name", "label", "description", "expr", "unit", "good_direction")} for m in spec["metrics"]],
+        "dimensions": list(spec["dimensions"]),
+        "dashboards": dash,
+        "integrity_problems": problems,
+        "metric_value_count": len(mvals.get("metrics", [])),
+    }
+
+
+def to_markdown(c: dict) -> str:
+    s = c["sources"][0]
+    out = ["# SupplyPulse data catalog", "", "_Generated by `python -m supplypulse.catalog.build_catalog`; do not edit by hand._", "",
+           "## Source inventory", "", f"- **{s['name']}** ({s['provider']}), license {s['license']}", f"- Format: {s['format']}; coverage: {s['coverage']}",
+           f"- Rows: raw {s['raw_rows']:,}, curated {s['curated_rows']:,}, quarantined {s['quarantined_rows']:,}; columns kept {s['kept_columns']} of {s['raw_columns']}",
+           f"- Dropped as PII or empty: {', '.join(s['dropped_pii_columns'])}", "", "Known limitations:", ""]
+    out += [f"- {x}" for x in s["caveats"]]
+    out += ["", f"## Tables ({len(c['tables'])})", "", "| Table | Layer | Rows | Upstream |", "|---|---|---:|---|"]
+    out += [f"| `{t['name']}` | {t['layer']} | {format(t['rows'], ',') if t['rows'] is not None else 'view'} | {', '.join(t['upstream']) or 'source'} |" for t in c["tables"]]
+    out += ["", f"## Governed metrics ({len(c['metrics'])})", "", "| Metric | Definition | Unit | Better when |", "|---|---|---|---|"]
+    out += [f"| **{m['label']}** (`{m['name']}`) | {m['description']} | {m['unit']} | {m['good_direction']} |" for m in c["metrics"]]
+    out += ["", "Dimensions: " + ", ".join(f"`{d}`" for d in c["dimensions"]), "", "## Dashboard inventory", "", "| View | Tables | Metrics |", "|---|---|---|"]
+    out += [f"| {d['title']} | {', '.join(d['tables']) or '-'} | {', '.join(d['metrics']) or '-'} |" for d in c["dashboards"]]
+    out += ["", "## Data tests", "", f"dbt test results: {c['tests']['dbt_test_results']}", ""]
+    return "\n".join(out)
+
+
+def main() -> None:
+    p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument("--db", default="data/supplypulse.duckdb")
+    p.add_argument("--target", default="warehouse/target")
+    p.add_argument("--metrics", default="metrics/metrics.yml")
+    p.add_argument("--dashboards", default="site/dashboards.yml")
+    p.add_argument("--etl-report", default="data/exports/etl_report.json")
+    p.add_argument("--metric-values", default="site/data/metrics.json")
+    p.add_argument("--out", default="site/data/catalog.json")
+    p.add_argument("--md", default="docs/DATA_CATALOG.md")
+    a = p.parse_args()
+    c = build(a.db, a.target, a.metrics, a.dashboards, a.etl_report, a.metric_values)
+    Path(a.out).parent.mkdir(parents=True, exist_ok=True)
+    Path(a.out).write_text(json.dumps(c, indent=1))
+    Path(a.md).parent.mkdir(parents=True, exist_ok=True)
+    Path(a.md).write_text(to_markdown(c))
+    print(f"tables {len(c['tables'])}, metrics {len(c['metrics'])}, dashboards {len(c['dashboards'])}, tests {c['tests']}")
+    if c["integrity_problems"]:
+        print("INTEGRITY PROBLEMS:", *c["integrity_problems"], sep="\n  ")
+        raise SystemExit(1)
+
+
+if __name__ == "__main__":
+    main()

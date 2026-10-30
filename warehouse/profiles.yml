@@ -1,0 +1,16 @@
+# Default target is DuckDB (used locally and in CI). The bigquery target is opt-in:
+#   pip install dbt-bigquery && dbt run --target bigquery
+supplypulse:
+  target: duckdb
+  outputs:
+    duckdb:
+      type: duckdb
+      path: "{{ env_var('SP_DUCKDB_PATH', '../data/supplypulse.duckdb') }}"
+      threads: 4
+    bigquery:
+      type: bigquery
+      method: oauth
+      project: "{{ env_var('GCP_PROJECT', '') }}"
+      dataset: "{{ env_var('BQ_DATASET', 'supplypulse') }}"
+      location: "{{ env_var('BQ_LOCATION', 'US') }}"
+      threads: 4

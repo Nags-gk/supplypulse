@@ -1,0 +1,22 @@
+# Inventory of dashboard views: which warehouse tables and governed metrics each one reads.
+dashboards:
+  - id: overview
+    title: Executive overview
+    tables: [kpi_monthly, fct_order_items]
+    metrics: [orders, net_sales, profit_margin, on_time_delivery_rate, late_delivery_rate]
+  - id: delivery
+    title: Delivery performance and shipping-mode scorecard
+    tables: [scorecard_shipping_mode, scorecard_region, kpi_monthly]
+    metrics: [on_time_delivery_rate, late_delivery_rate, avg_delay_days]
+  - id: demand
+    title: Demand forecast and structural break
+    tables: [demand_weekly]
+    metrics: [order_lines]
+  - id: anomalies
+    title: KPI anomaly watch
+    tables: [fct_order_items, dim_date]
+    metrics: [order_lines, on_time_delivery_rate, cancellation_rate, suspected_fraud_rate, profit_margin, avg_delay_days]
+  - id: catalog
+    title: Data catalog and metric definitions
+    tables: []
+    metrics: []

@@ -1,0 +1,68 @@
+name: ci-and-pages
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - run: pip install -r requirements.txt
+      - name: Unit tests
+        run: python -m pytest -q tests
+      - name: Fetch raw data
+        run: python scripts/fetch_data.py
+      - name: Spark ETL with quality gate
+        run: PYTHONPATH=src python -m supplypulse.etl.spark_etl
+      - name: dbt build (models and tests)
+        run: cd warehouse && DBT_PROFILES_DIR=. dbt build
+      - name: Metrics, forecast, anomalies, catalog, site data
+        run: |
+          export PYTHONPATH=src
+          python -m supplypulse.catalog.metrics_check
+          python -m supplypulse.forecast.run_forecast
+          python -m supplypulse.anomaly.detect
+          python -m supplypulse.catalog.export_site_data
+          python -m supplypulse.catalog.build_catalog
+          python -m supplypulse.agent.evaluate --dry
+      - name: Live agent evaluation (only when GEMINI_API_KEY secret is set)
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          if [ -n "$GEMINI_API_KEY" ]; then PYTHONPATH=src python -m supplypulse.agent.evaluate; else echo "no key, skipped"; fi
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
