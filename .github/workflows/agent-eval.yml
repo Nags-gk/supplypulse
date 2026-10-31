@@ -33,12 +33,15 @@ jobs:
         run: |
           python scripts/fetch_data.py
           PYTHONPATH=src python -m supplypulse.etl.spark_etl
-          cd warehouse && DBT_PROFILES_DIR=. dbt build --quiet
+          (cd warehouse && DBT_PROFILES_DIR=. dbt build --quiet)
+          PYTHONPATH=src python -m supplypulse.catalog.metrics_check
+          PYTHONPATH=src python -m supplypulse.catalog.build_catalog
       - name: Evaluate
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           SP_GEMINI_MODEL: ${{ inputs.model || 'gemini-3.8-flash' }}
         run: |
+          set -o pipefail
           test -n "$GEMINI_API_KEY" || { echo "GEMINI_API_KEY secret is not set"; exit 1; }
           PYTHONPATH=src python -m supplypulse.agent.evaluate | tee eval.log
           tail -n 20 eval.log >> "$GITHUB_STEP_SUMMARY"
