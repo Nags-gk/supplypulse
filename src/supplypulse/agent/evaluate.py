@@ -43,7 +43,7 @@ def dry(db: str) -> int:
     return bad
 
 
-def score(db: str, llm, out: str | None = None, pause: float = 4.0) -> dict:
+def score(db: str, llm, out: str | None = None, pause: float = 7.0) -> dict:
     ctx = schema_context()
     con = duckdb.connect(db, read_only=True)
     results = []
@@ -60,7 +60,7 @@ def score(db: str, llm, out: str | None = None, pause: float = 4.0) -> dict:
             print(f"[{len(results) + 1}/{len(CASES)}] API FAILURE {q}: {api_err[:120]}", flush=True)
             results.append({"question": q, "pass": False, "answerable": gold is not None, "sql": "", "error": api_err, "attempts": 0, "api_failure": True})
             continue
-        time.sleep(pause)
+        time.sleep(pause)  # stay under free-tier requests-per-minute limits
         if gold is None:
             ok = (not a.error) and a.rows[:1] == [("UNANSWERABLE",)]
         else:
@@ -71,8 +71,8 @@ def score(db: str, llm, out: str | None = None, pause: float = 4.0) -> dict:
     ans = [r for r in scored if r["answerable"]]
     ref = [r for r in scored if not r["answerable"]]
     rep = {"cases": len(results), "scored_cases": len(scored), "api_failures": len(results) - len(scored),
-           "execution_accuracy": sum(r["pass"] for r in ans) / max(1, len(ans)), "answerable_scored": len(ans),
-           "refusal_accuracy": sum(r["pass"] for r in ref) / max(1, len(ref)), "results": results}
+           "execution_accuracy": sum(r["pass"] for r in ans) / len(ans) if ans else None, "answerable_scored": len(ans),
+           "refusal_accuracy": sum(r["pass"] for r in ref) / len(ref) if ref else None, "refusals_scored": len(ref), "results": results}
     rep["model"] = os.environ.get("SP_GEMINI_MODEL", MODEL)
     if out:
         Path(out).write_text(json.dumps(rep, indent=2))
@@ -89,7 +89,9 @@ if __name__ == "__main__":
         raise SystemExit(1 if dry(a.db) else 0)
     from .text_to_sql import _gemini
     r = score(a.db, _gemini, str(ROOT / "site/data/agent_eval.json"))
-    print(f"execution accuracy {r['execution_accuracy']:.0%} on {r['answerable_scored']} answered questions; refusal accuracy {r['refusal_accuracy']:.0%}; API failures {r['api_failures']} of {r['cases']}")
+    fmt = lambda v: "n/a" if v is None else f"{v:.0%}"  # noqa: E731
+    print(f"execution accuracy {fmt(r['execution_accuracy'])} on {r['answerable_scored']} answered questions; "
+          f"refusal accuracy {fmt(r['refusal_accuracy'])} on {r['refusals_scored']}; API failures {r['api_failures']} of {r['cases']}")
     for x in r["results"]:
         if not x["pass"]:
             print("MISS:", x["question"], "|", x["error"] or x["sql"])
