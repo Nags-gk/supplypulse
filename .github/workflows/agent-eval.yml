@@ -1,0 +1,49 @@
+name: agent-eval
+
+# Live text-to-SQL evaluation against Gemini. Manual (and weekly) so the dashboard deploy never waits on the LLM API.
+on:
+  workflow_dispatch:
+    inputs:
+      model:
+        description: "Gemini model id"
+        required: false
+        default: "gemini-3.8-flash"
+  schedule:
+    - cron: "17 9 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - run: pip install -r requirements.txt
+      - name: Build warehouse
+        run: |
+          python scripts/fetch_data.py
+          PYTHONPATH=src python -m supplypulse.etl.spark_etl
+          cd warehouse && DBT_PROFILES_DIR=. dbt build --quiet
+      - name: Evaluate
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          SP_GEMINI_MODEL: ${{ inputs.model || 'gemini-3.8-flash' }}
+        run: |
+          test -n "$GEMINI_API_KEY" || { echo "GEMINI_API_KEY secret is not set"; exit 1; }
+          PYTHONPATH=src python -m supplypulse.agent.evaluate | tee eval.log
+          tail -n 20 eval.log >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: agent-eval
+          path: site/data/agent_eval.json

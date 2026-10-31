@@ -49,7 +49,7 @@ def score(db: str, llm, out: str | None = None, pause: float = 4.0) -> dict:
     results = []
     for q, gold in CASES:
         a, api_err = None, None
-        for wait in (0, 20, 60):  # retry transient API errors (503 high demand, 429 rate limit)
+        for wait in (0, 15, 45):  # retry transient API errors (503 high demand, 429 rate limit)
             time.sleep(wait)
             try:
                 a = ask(q, db, llm, ctx)
@@ -57,6 +57,7 @@ def score(db: str, llm, out: str | None = None, pause: float = 4.0) -> dict:
             except Exception as e:  # noqa: BLE001
                 api_err = f"api: {e}"[:300]
         if a is None:  # API never answered: excluded from accuracy, reported separately
+            print(f"[{len(results) + 1}/{len(CASES)}] API FAILURE {q}: {api_err[:120]}", flush=True)
             results.append({"question": q, "pass": False, "answerable": gold is not None, "sql": "", "error": api_err, "attempts": 0, "api_failure": True})
             continue
         time.sleep(pause)
@@ -64,6 +65,7 @@ def score(db: str, llm, out: str | None = None, pause: float = 4.0) -> dict:
             ok = (not a.error) and a.rows[:1] == [("UNANSWERABLE",)]
         else:
             ok = (not a.error) and same_result(a.rows, con.execute(validate_sql(gold, 10_000)).fetchall())
+        print(f"[{len(results) + 1}/{len(CASES)}] {'PASS' if ok else 'MISS'} {q}", flush=True)
         results.append({"question": q, "pass": bool(ok), "answerable": gold is not None, "sql": a.sql, "error": a.error, "attempts": a.attempts})
     scored = [r for r in results if not r.get("api_failure")]
     ans = [r for r in scored if r["answerable"]]

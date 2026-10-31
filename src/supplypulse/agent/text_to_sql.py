@@ -50,7 +50,9 @@ def _gemini(prompt: str) -> str:
     from google import genai
     from google.genai import types
 
-    client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
+    # Short timeout and bounded retries so an overloaded model fails fast instead of stalling CI.
+    client = genai.Client(api_key=os.environ["GEMINI_API_KEY"], http_options=types.HttpOptions(
+        timeout=60_000, retry_options=types.HttpRetryOptions(attempts=2, initial_delay=2, max_delay=10)))
     r = client.models.generate_content(model=MODEL, contents=prompt, config=types.GenerateContentConfig(system_instruction=SYSTEM, temperature=0))
     return r.text
 
