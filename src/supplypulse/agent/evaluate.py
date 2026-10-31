@@ -48,10 +48,16 @@ def score(db: str, llm, out: str | None = None, pause: float = 4.0) -> dict:
     con = duckdb.connect(db, read_only=True)
     results = []
     for q, gold in CASES:
-        try:
-            a = ask(q, db, llm, ctx)
-        except Exception as e:  # noqa: BLE001  API errors count as a miss, not a crash
-            results.append({"question": q, "pass": False, "answerable": gold is not None, "sql": "", "error": f"api: {e}"[:300], "attempts": 0})
+        a, api_err = None, None
+        for wait in (0, 20, 60):  # retry transient API errors (503 high demand, 429 rate limit)
+            time.sleep(wait)
+            try:
+                a = ask(q, db, llm, ctx)
+                break
+            except Exception as e:  # noqa: BLE001
+                api_err = f"api: {e}"[:300]
+        if a is None:  # API never answered: excluded from accuracy, reported separately
+            results.append({"question": q, "pass": False, "answerable": gold is not None, "sql": "", "error": api_err, "attempts": 0, "api_failure": True})
             continue
         time.sleep(pause)
         if gold is None:
@@ -59,9 +65,12 @@ def score(db: str, llm, out: str | None = None, pause: float = 4.0) -> dict:
         else:
             ok = (not a.error) and same_result(a.rows, con.execute(validate_sql(gold, 10_000)).fetchall())
         results.append({"question": q, "pass": bool(ok), "answerable": gold is not None, "sql": a.sql, "error": a.error, "attempts": a.attempts})
-    ans = [r for r in results if r["answerable"]]
-    rep = {"cases": len(results), "execution_accuracy": sum(r["pass"] for r in ans) / len(ans),
-           "refusal_accuracy": sum(r["pass"] for r in results if not r["answerable"]) / max(1, len(results) - len(ans)), "results": results}
+    scored = [r for r in results if not r.get("api_failure")]
+    ans = [r for r in scored if r["answerable"]]
+    ref = [r for r in scored if not r["answerable"]]
+    rep = {"cases": len(results), "scored_cases": len(scored), "api_failures": len(results) - len(scored),
+           "execution_accuracy": sum(r["pass"] for r in ans) / max(1, len(ans)), "answerable_scored": len(ans),
+           "refusal_accuracy": sum(r["pass"] for r in ref) / max(1, len(ref)), "results": results}
     rep["model"] = os.environ.get("SP_GEMINI_MODEL", MODEL)
     if out:
         Path(out).write_text(json.dumps(rep, indent=2))
@@ -78,7 +87,7 @@ if __name__ == "__main__":
         raise SystemExit(1 if dry(a.db) else 0)
     from .text_to_sql import _gemini
     r = score(a.db, _gemini, str(ROOT / "site/data/agent_eval.json"))
-    print(f"execution accuracy {r['execution_accuracy']:.0%} on {r['cases']} cases; refusal accuracy {r['refusal_accuracy']:.0%}")
+    print(f"execution accuracy {r['execution_accuracy']:.0%} on {r['answerable_scored']} answered questions; refusal accuracy {r['refusal_accuracy']:.0%}; API failures {r['api_failures']} of {r['cases']}")
     for x in r["results"]:
         if not x["pass"]:
             print("MISS:", x["question"], "|", x["error"] or x["sql"])

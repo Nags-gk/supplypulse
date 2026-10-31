@@ -49,6 +49,7 @@ jobs:
           python -m supplypulse.agent.evaluate --dry
       - name: Live agent evaluation (only when GEMINI_API_KEY secret is set)
         continue-on-error: true
+        timeout-minutes: 20
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
